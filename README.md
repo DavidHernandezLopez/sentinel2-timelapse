@@ -15,6 +15,7 @@ PIL
 Usage
 ----
 
+```
 Usage: sentinel2_timelapse.py [options] 
 
 Options:
@@ -43,3 +44,4 @@ Options:
                         Blue band coeficient
   -d, --debug           Only print command
 
+``` 

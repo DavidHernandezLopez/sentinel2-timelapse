@@ -4,7 +4,7 @@ Time lapse GIFs from Sentinel-2 imagery
 Dependencies
 ----
 
-Python 2.7
+Python
 
 imageio
 

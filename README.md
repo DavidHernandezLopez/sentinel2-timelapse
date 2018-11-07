@@ -5,8 +5,11 @@ Dependencies
 ----
 
 Python 2.7
+
 imageio
+
 gdal
+
 PIL
 
 Usage

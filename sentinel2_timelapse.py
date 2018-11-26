@@ -1,15 +1,13 @@
 # -*- coding: iso-8859-1 -*-
 
-from subprocess import call
 import ntpath
 import imageio
 import os
 from PIL import Image, ImageDraw, ImageFont
 import optparse
 import collections
-
-VALID_EXTENSIONS = ('png', 'jpg')
-
+from osgeo import gdal
+import numpy as np
 
 def create_gif(file_names, duration, output_dir, font_size=20):
     ordered_file_names = collections.OrderedDict(sorted(file_names.items()))
@@ -21,7 +19,7 @@ def create_gif(file_names, duration, output_dir, font_size=20):
         if font_size != 0:
             img = Image.open(value).convert('RGBA')
             dinamic_font_size = img.size[0] * 3 / 100
-            font = ImageFont.truetype(os.path.join(script_dir_str, 'font/DejaVuSans-Bold.ttf'), dinamic_font_size)
+            font = ImageFont.truetype(os.path.join(script_dir_str, 'font/DejaVuSans-Bold.ttf'), int(dinamic_font_size))
             txt = Image.new('RGBA', img.size, (255, 255, 255, 0))
             d = ImageDraw.Draw(txt)
             date_srt = ntpath.basename(value).split("_")[0]
@@ -42,88 +40,54 @@ def create_gif(file_names, duration, output_dir, font_size=20):
             os.remove('{0}.aux.xml'.format(value))
 
 
-
 def compute_rgb432(l1c_xml_path, output_file_path, coef_r = 0.05, coef_g = 0.05, coef_b = 0.05, size = 100):
-    l1c_vrt = output_file_path + "_VRT.vrt"
-    l1c_dataset_1 = output_file_path + "_VRT_1.vrt"
-    l1c_b4_10cm_vrt = output_file_path + "_b4.vrt"
-    l1c_b3_10cm_vrt = output_file_path + "_b3.vrt"
-    l1c_b2_10cm_vrt = output_file_path + "_b2.vrt"
-    l1c_b4_10cm_tif = output_file_path + "_b4.tif"
-    l1c_b3_10cm_tif = output_file_path + "_b3.tif"
-    l1c_b2_10cm_tif = output_file_path + "_b2.tif"
+    l1c_10cm_vrt = output_file_path + ".vrt"
     tmp_output_file_path = output_file_path + "_original_size.tif"
 
-    #*****************************************
+    # *****************************************
     # generate l1c vrt (gdal translate)
     # ****************************************
-    cmd = "gdal_translate -of VRT -sds {0} {1}".format(
-        l1c_xml_path, l1c_vrt)
-    call(cmd, shell=True)
+    ds = gdal.Open(l1c_xml_path, gdal.GA_ReadOnly)
+    subdatasets = ds.GetSubDatasets()
+    ds_10m = gdal.Open(subdatasets[0][0])
+
+    if size > 100:
+        size = 100
+
+    gdal.Translate(l1c_10cm_vrt, ds_10m, options='-of VRT -outsize {0}% {0}%'.format(size))
+    ds_resized = gdal.Open(l1c_10cm_vrt, gdal.GA_ReadOnly)
 
     # *****************************************
-    # extract virtual raster bands (gdal translate)
+    # apply coeficient to bands
     # ****************************************
-    cmd = "gdal_translate -of VRT -outsize {2}% {2}% -b 1 {0} {1}".format(
-        l1c_dataset_1, l1c_b4_10cm_vrt, size)
-    call(cmd, shell=True)
-
-    cmd = "gdal_translate -of VRT -outsize {2}% {2}% -b 2 {0} {1}".format(
-        l1c_dataset_1, l1c_b3_10cm_vrt, size)
-    call(cmd, shell=True)
-
-    cmd = "gdal_translate -of VRT -outsize {2}% {2}% -b 3 {0} {1}".format(
-        l1c_dataset_1, l1c_b2_10cm_vrt, size)
-    call(cmd, shell=True)
-
-    # *****************************************
-    # apply coeficient to bands (gdal_calc.py)
-    # ****************************************
-    coef_r_str = str(coef_r)
-    cmd = "gdal_calc.py -A {0} -B {1} -C {2} --outfile={3} " \
-          "--calc '(A.astype(float)*B*C!=0)*(A*{4}*(A*{4}<=255)+(A*{4}>255)*255)' " \
-          "--type=Byte --NoDataValue=0".format(l1c_b4_10cm_vrt, l1c_b3_10cm_vrt, l1c_b2_10cm_vrt, l1c_b4_10cm_tif, coef_r_str)
-    call(cmd, shell=True)
-
-    coef_g_str = str(coef_g)
-    cmd = "gdal_calc.py -A {0} -B {1} -C {2} --outfile={3} " \
-          "--calc '(A.astype(float)*B*C!=0)*(A*{4}*(A*{4}<=255)+(A*{4}>255)*255)'" \
-          " --type=Byte --NoDataValue=0".format(l1c_b3_10cm_vrt, l1c_b4_10cm_vrt, l1c_b2_10cm_vrt, l1c_b3_10cm_tif, coef_g_str)
-    call(cmd, shell=True)
-
-    coef_b_str = str(coef_b)
-    cmd = "gdal_calc.py -A {0} -B {1} -C {2} --outfile={3} " \
-          "--calc '(A.astype(float)*B*C!=0)*(A*{4}*(A*{4}<=255)+(A*{4}>255)*255)'" \
-          " --type=Byte --NoDataValue=0".format(l1c_b2_10cm_vrt, l1c_b4_10cm_vrt, l1c_b3_10cm_vrt, l1c_b2_10cm_tif, coef_b_str)
-    call(cmd, shell=True)
+    b4_array = np.array(ds_resized.GetRasterBand(1).ReadAsArray()) * coef_r
+    b3_array = np.array(ds_resized.GetRasterBand(2).ReadAsArray()) * coef_g
+    b2_array = np.array(ds_resized.GetRasterBand(3).ReadAsArray()) * coef_b
 
     # *****************************************
     # generate RGB output file (gdal_merge.py)
     # ****************************************
-    cmd = "gdal_merge.py -separate -ot Byte -o {0} {1} {2} {3}".format(
-        tmp_output_file_path, l1c_b4_10cm_tif, l1c_b3_10cm_tif, l1c_b2_10cm_tif)
-    call(cmd, shell=True)
-
+    dst_ds = gdal.GetDriverByName('GTiff').Create(tmp_output_file_path,
+                                                  ds_resized.RasterYSize, ds_resized.RasterXSize,
+                                                  3, gdal.GDT_Byte)
+    geotransform = ds_10m.GetGeoTransform()
+    dst_ds.SetGeoTransform(geotransform)
+    dst_ds.SetProjection(ds_10m.GetProjection())  # export coords to file
+    dst_ds.GetRasterBand(1).WriteArray(b4_array)  # write r-band to the raster
+    dst_ds.GetRasterBand(2).WriteArray(b3_array)  # write g-band to the raster
+    dst_ds.GetRasterBand(3).WriteArray(b2_array)  # write b-band to the raster
+    dst_ds.FlushCache()  # write to disk
+    dst_ds = None
 
     # *********************************************
     # Translate to PNG and resize  (gdal_translate)
     # *********************************************
-    cmd = 'gdal_translate -of PNG {0} {1}'.format(tmp_output_file_path,
-                                                         output_file_path)
-    call(cmd, shell=True)
+    ds_gtiff = gdal.Open(tmp_output_file_path, gdal.GA_ReadOnly)
+    gdal.Translate(output_file_path, ds_gtiff, options='-of PNG')
 
-
-    os.remove(output_file_path + "_VRT_1.vrt")
-    os.remove(output_file_path + "_VRT_2.vrt")
-    os.remove(output_file_path + "_VRT_3.vrt")
-    os.remove(output_file_path + "_VRT_4.vrt")
-    os.remove(l1c_b4_10cm_vrt)
-    os.remove(l1c_b3_10cm_vrt)
-    os.remove(l1c_b2_10cm_vrt)
-    os.remove(l1c_b4_10cm_tif)
-    os.remove(l1c_b3_10cm_tif)
-    os.remove(l1c_b2_10cm_tif)
+    os.remove(l1c_10cm_vrt)
     os.remove(tmp_output_file_path)
+
 
 if __name__ == "__main__":
 
@@ -144,7 +108,7 @@ if __name__ == "__main__":
     usage = "usage: %prog [options] "
     parser = OptionParser(usage=usage)
     parser.add_option("-i", "--input", dest="input_path", action="store", type="string",
-                      help="Input directory containing uncompressed L1C products (.zip) ", default=None)
+                      help="Input directory containing uncompressed L1C products", default=None)
     parser.add_option("-o", "--output", dest="output_path", action="store", type="string",
                       help="Output directory", default=None)
     parser.add_option("--product_list", dest="product_list", action="store", type="string",
@@ -163,11 +127,11 @@ if __name__ == "__main__":
     parser.add_option("--font_size", dest="font_size", action="store", type="int",
                       help="Text overlay font size. 0 for not overlay", default=20)
     parser.add_option("-r", "--red", dest="red_coef", action="store", type="float",
-                      help="Red band coeficient", default=0.05)
+                      help="Red band coeficient (default 0.05)", default=0.05)
     parser.add_option("-g", "--green", dest="green_coef", action="store", type="float",
-                      help="Red band coeficient", default=0.05)
+                      help="Red band coeficient (default 0.05)", default=0.05)
     parser.add_option("-b", "--blue", dest="blue_coef", action="store", type="float",
-                      help="Blue band coeficient", default=0.05)
+                      help="Blue band coeficient (default 0.05)", default=0.05)
     parser.add_option("-d", "--debug", dest="debug", action="store_true",
                       help="Only print command")
 

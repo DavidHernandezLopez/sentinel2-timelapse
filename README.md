@@ -5,12 +5,10 @@ Dependencies
 ----
 
 Python
-
 imageio
-
 gdal
-
 PIL
+numpy
 
 Usage
 ----

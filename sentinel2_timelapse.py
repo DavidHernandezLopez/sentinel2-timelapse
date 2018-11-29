@@ -78,12 +78,14 @@ def compute_rgb432(l1c_xml_path, output_file_path, coef_r = 0.05, coef_g = 0.05,
     dst_ds.GetRasterBand(3).WriteArray(b2_array)  # write b-band to the raster
     dst_ds.FlushCache()  # write to disk
     dst_ds = None
+    ds_10m = None
 
     # *********************************************
     # Translate to PNG and resize  (gdal_translate)
     # *********************************************
     ds_gtiff = gdal.Open(tmp_output_file_path, gdal.GA_ReadOnly)
     gdal.Translate(output_file_path, ds_gtiff, options='-of PNG')
+    ds_gtiff = None
 
     os.remove(l1c_10cm_vrt)
     os.remove(tmp_output_file_path)

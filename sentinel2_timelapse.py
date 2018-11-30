@@ -13,7 +13,6 @@ def create_gif(file_names, duration, output_dir, font_size=20):
     ordered_file_names = collections.OrderedDict(sorted(file_names.items()))
     images = []
     script_dir_str = ntpath.dirname(os.path.realpath(__file__))
-    font = ImageFont.truetype(os.path.join(script_dir_str, 'DejaVuSans-Bold.ttf'), font_size)
     # for file_name in file_names:
     for key, value in ordered_file_names.items():
         if font_size != 0:
